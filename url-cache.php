@@ -30,11 +30,16 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 */
 
+
+
 /* Load the config file. */
 
 include_once( ABSPATH . "wp-content/plugins/url-cache.conf" );
 
-/* url_cache
+
+
+/*
+ * url_cache
  *  - $remote_url is the remote URL that the function will attempt
  *    to cache
  *  - returns a URL to the locally cached file, or $url if there was
@@ -47,7 +52,7 @@ function url_cache ( $remote_url = "" ) {
 
   if ( $remote_url == "" ) return;
 
-  // Calculate a hash of the URL and extract the URLs file extension. These
+  // Calculate a hash of the URL and extract the file extension. These
   // will be used to locate and name the cache file.
 
   $hash = md5( $remote_url );
@@ -65,7 +70,9 @@ function url_cache ( $remote_url = "" ) {
 
   // Check whether we have a cached file available that is not stale.
 
-  if ( @file_exists( $local_file ) && ( ( @filemtime( $local_file ) + UC_CACHE_TIMEOUT ) > ( time() ) ) ) {
+  $timeout = @filemtime( $local_file ) + UC_CACHE_TIMEOUT;
+
+  if ( @file_exists( $local_file ) && ( $timeout > ( time() ) ) ) {
 
     // If so, return the URL of the cached file.
 
