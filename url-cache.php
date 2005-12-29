@@ -3,8 +3,8 @@
 /*
 
 Plugin Name: URL Cache
-Version: 0.1
-Plugin URI: http://mcnicks.org/plugins/url-cache/
+Version: 1.1
+Plugin URI: http://mcnicks.org/wordpress/url-cache/
 Description: Given a URL, the url_cache() function will attempt to download the file it represents and return a URL pointing to this locally cached version.
 Author: David McNicol
 Author URI: http://mcnicks.org/
