@@ -32,13 +32,14 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 
 
-/* Load the config file. */
-
-include_once( 'url-cache.conf' );
-
 /* The user agent to use for URL transfers */
 
 $url_cache_ua = "url-cache 1.1 -- http://mcnicks.org/wordpress/url-cache/";
+
+// Work out some settings.
+
+$cache_dir = ABSPATH . "/wp-content/cache/url-cache/";
+$cache_url = get_option( 'siteurl' ) . "/wp-content/cache/url-cache/";
 
 
 
@@ -50,11 +51,17 @@ $url_cache_ua = "url-cache 1.1 -- http://mcnicks.org/wordpress/url-cache/";
  *    a failure
  */
 
-function url_cache ( $url, $username = "", $password = "" ) {
+function url_cache ( $url, $username = "", $password = "", $timeout = "" ) {
+  global $cache_dir, $cache_url;
 
   // Return if no URL was given.
 
   if ( $url == "" ) return;
+
+  // Set the timeout.
+
+  if ( ! $timeout )
+    $timeout = 3600;
 
   // Calculate a hash of the URL and extract the file extension. These
   // will be used to locate and name the cache file.
@@ -69,14 +76,14 @@ function url_cache ( $url, $username = "", $password = "" ) {
 
   // Work out the local file name and the URL associated with it.
 
-  $local_file = UC_CACHE_DIR . "/$hash.$extension";
-  $local_url = UC_CACHE_URL . "/$hash.$extension";
+  $local_file = $cache_dir . "$hash.$extension";
+  $local_url = $cache_url . "$hash.$extension";
 
   // Check whether we have a cached file available that is not stale.
 
-  $timeout = @filemtime( $local_file ) + UC_CACHE_TIMEOUT;
+  $expires = @filemtime( $local_file ) + $timeout;
 
-  if ( @file_exists( $local_file ) && ( $timeout > ( time() ) ) ) {
+  if ( @file_exists( $local_file ) && ( expires > ( time() ) ) ) {
 
     // If so, return the URL of the cached file.
 
@@ -153,6 +160,7 @@ function uc_get_url ( $url, $username, $password ) {
  */
 
 function uc_get_rest_response( $method, $slug, $timeout = 0, $any = 0 ) {
+  global $cache_dir;
 
   // Return if the method and slug are not specified.
 
@@ -160,11 +168,12 @@ function uc_get_rest_response( $method, $slug, $timeout = 0, $any = 0 ) {
 
   // Set the timeout to the default value if none has been specified.
 
-  if ( ! $timeout ) $timeout = UC_CACHE_TIMEOUT;
+  if ( ! $timeout )
+    $timeout = 3600;
 
   // Work out the file name that the response should be cached in.
 
-  $filename = UC_CACHE_DIR."rest--$method--$slug";
+  $filename = $cache_dir."rest--$method--$slug";
 
   // Return if the file does not exist.
 
@@ -209,6 +218,7 @@ function uc_get_rest_response( $method, $slug, $timeout = 0, $any = 0 ) {
  */
 
 function uc_cache_rest_response( $method, $slug, $response ) {
+  global $cache_dir;
 
   // Return if the arguments are not specified.
 
@@ -216,7 +226,7 @@ function uc_cache_rest_response( $method, $slug, $response ) {
 
   // Work out the file name that the response should be cached in.
 
-  $filename = UC_CACHE_DIR."rest--$method--$slug";
+  $filename = $cache_dir."rest--$method--$slug";
 
   // Open it for writing and dump the response in.
 
