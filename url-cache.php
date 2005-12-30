@@ -36,6 +36,10 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 include_once( 'url-cache.conf' );
 
+/* The user agent to use for URL transfers */
+
+$url_cache_ua = "url-cache 1.1 -- http://mcnicks.org/wordpress/url-cache/";
+
 
 
 /*
@@ -46,22 +50,22 @@ include_once( 'url-cache.conf' );
  *    a failure
  */
 
-function url_cache ( $remote_url = "" ) {
+function url_cache ( $url, $username = "", $password = "" ) {
 
   // Return if no URL was given.
 
-  if ( $remote_url == "" ) return;
+  if ( $url == "" ) return;
 
   // Calculate a hash of the URL and extract the file extension. These
   // will be used to locate and name the cache file.
 
-  $hash = md5( $remote_url );
-  $extension = preg_replace( '/^.*\.([^\.]+)$/', '$1', $remote_url );
+  $hash = md5( $url );
+  $extension = preg_replace( '/^.*\.([^\.]+)$/', '$1', $url );
 
   // Return the original URL if we did not get sensible values for either
   // of these variables.
 
-  if ( ! $hash || ! $extension ) return $remote_url;
+  if ( ! $hash || ! $extension ) return $url;
 
   // Work out the local file name and the URL associated with it.
 
@@ -82,18 +86,14 @@ function url_cache ( $remote_url = "" ) {
 
     // Attempt to cache the file locally.
     
-    if ( $remote = fopen( $remote_url, "rb" ) ) {
+    $contents = uc_get_url( $url, $username, $password );
 
-      if ( $local = fopen( $local_file, "wb" ) ) {
+    if ( $contents ) {
 
-        while ( $data = fread( $remote, 8192 ) ) {
-          fwrite( $local, $data, 8192 );
-        }
+      if ( $local = fopen( $local_file, "wb" ) )
+        fwrite( $local, $contents );
 
-        fclose( $local );
-      }
-      
-      fclose( $remote );
+      fclose( $local );
     }
   }
 
@@ -104,9 +104,38 @@ function url_cache ( $remote_url = "" ) {
   if ( @file_exists( $local_file ) )
     return $local_url;
   else
-    return $remote_url;
+    return $url;
 }
   
+
+
+/*
+ * uc_get_url
+ *  - $url is the URL to fetch.
+ *  - $username and $password are the authentication details to use.
+ *  - returns the contents of the URL.
+ */
+
+function uc_get_url ( $url, $username, $password ) {
+  global $url_cache_ua;
+ 
+  $handle = curl_init( $url );
+
+  if ( $username && $password )
+    curl_setopt( $handle, CURLOPT_USERPWD, "$username:$password" );
+
+  curl_setopt( $handle, CURLOPT_RETURNTRANSFER, 1 );
+  curl_setopt( $handle, CURLOPT_CONNECTTIMEOUT, 1 );
+  curl_setopt( $handle, CURLOPT_TIMEOUT, 4 );
+  curl_setopt( $handle, CURLOPT_USERAGENT, $url_cache_ua );
+
+  $buffer = curl_exec( $handle );
+
+  curl_close( $handle );
+
+  return $buffer;
+}
+
 
 
 /* 
