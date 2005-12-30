@@ -105,12 +105,18 @@ function content_cache ( $url, $username = "", $password = "", $timeout = 3600 )
   if ( uc_is_cached( $url, $timeout ) )
     return uc_get_cached_contents( $url );
 
-  // Attempt to cache the file locally.
+  // Attempt to get the contents of the URL.
     
   $contents = uc_get_contents( $url, $username, $password );
 
+  // Cache the new contents if successful. If not, try to get
+  // the old contents from the cache, even though they are out
+  // of date.
+
   if ( $contents ) 
     uc_cache_contents( $url, $contents );
+  else
+    $contents = uc_get_cached_contents( $url );
 
   // If we reach this point, then an attempt has been made to
   // cache the file locally. Either way, we can simply return
