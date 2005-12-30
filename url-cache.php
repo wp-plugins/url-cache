@@ -3,7 +3,7 @@
 /*
 
 Plugin Name: URL Cache
-Version: 1.1
+Version: 1.2
 Plugin URI: http://mcnicks.org/wordpress/url-cache/
 Description: Given a URL, the url_cache() function will attempt to download the file it represents and return a URL pointing to this locally cached version.
 Author: David McNicol
@@ -34,82 +34,48 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 /* The user agent to use for URL transfers */
 
-$url_cache_ua = "url-cache 1.1 -- http://mcnicks.org/wordpress/url-cache/";
-
-// Work out some settings.
-
-$cache_dir = ABSPATH . "/wp-content/cache/url-cache/";
-$cache_url = get_option( 'siteurl' ) . "/wp-content/cache/url-cache/";
+$url_cache_ua = "url-cache 1.2 -- http://mcnicks.org/wordpress/url-cache/";
 
 
 
 /*
  * url_cache
- *  - $remote_url is the remote URL that the function will attempt
- *    to cache
- *  - returns a URL to the locally cached file, or $url if there was
- *    a failure
+ *
+ *  $url - the remote URL to cache
+ *  $username, $password - optional authentication parameters
+ *  $timeout - how old the cache can be before being considered stale.
+ *
+ * Attempts to access the given URL and download its contents to a
+ * local cache, and then returns a URL to that locally cached copy.
+ * If the download fails, the remote URL is returns so, from the 
+ * calling function's point-of-view, the function is transparent.
+ *
  */
 
-function url_cache ( $url, $username = "", $password = "", $timeout = "" ) {
-  global $cache_dir, $cache_url;
+function url_cache ( $url, $username = "", $password = "", $timeout = 3600 ) {
 
   // Return if no URL was given.
 
   if ( $url == "" ) return;
 
-  // Set the timeout.
+  // Return the local URL if the file is currently cached.
 
-  if ( ! $timeout )
-    $timeout = 3600;
+  if ( uc_is_cached( $url, $timeout ) )
+    return uc_get_local_url( $url );
 
-  // Calculate a hash of the URL and extract the file extension. These
-  // will be used to locate and name the cache file.
-
-  $hash = md5( $url );
-  $extension = preg_replace( '/^.*\.([^\.]+)$/', '$1', $url );
-
-  // Return the original URL if we did not get sensible values for either
-  // of these variables.
-
-  if ( ! $hash || ! $extension ) return $url;
-
-  // Work out the local file name and the URL associated with it.
-
-  $local_file = $cache_dir . "$hash.$extension";
-  $local_url = $cache_url . "$hash.$extension";
-
-  // Check whether we have a cached file available that is not stale.
-
-  $expires = @filemtime( $local_file ) + $timeout;
-
-  if ( @file_exists( $local_file ) && ( expires > ( time() ) ) ) {
-
-    // If so, return the URL of the cached file.
-
-    return $local_url;
-
-  } else {
-
-    // Attempt to cache the file locally.
+  // Attempt to cache the file locally.
     
-    $contents = uc_get_url( $url, $username, $password );
+  $contents = uc_get_contents( $url, $username, $password );
 
-    if ( $contents ) {
-
-      if ( $local = fopen( $local_file, "wb" ) )
-        fwrite( $local, $contents );
-
-      fclose( $local );
-    }
-  }
+  if ( $contents )
+    uc_cache_contents( $url, $contents );
 
   // If we reach this point, then an attempt has been made to
   // cache the file locally. We can check whether the local
-  // file exists to determine which URL to return.
+  // file is valid to determine which URL to return.
 
-  if ( @file_exists( $local_file ) )
-    return $local_url;
+  if ( uc_is_cached( $url, $timeout ) )
+    return uc_get_local_url( $url );
   else
     return $url;
 }
@@ -117,13 +83,189 @@ function url_cache ( $url, $username = "", $password = "", $timeout = "" ) {
 
 
 /*
- * uc_get_url
- *  - $url is the URL to fetch.
- *  - $username and $password are the authentication details to use.
- *  - returns the contents of the URL.
+ * content_cache
+ *
+ *  $url - the remote URL to cache
+ *  $username, $password - optional authentication parameters
+ *  $timeout - how old the cache can be before being considered stale.
+ *
+ * This operates like url_cache, except that it returns the content
+ * of the URL itself rather than a URL to a locally cached version
+ * of the content.
  */
 
-function uc_get_url ( $url, $username, $password ) {
+function content_cache ( $url, $username = "", $password = "", $timeout = 3600 ) {
+
+  // Return if no URL was given.
+
+  if ( $url == "" ) return;
+
+  // Return the local URL if the file is currently cached.
+
+  if ( uc_is_cached( $url, $timeout ) )
+    return uc_get_cached_contents( $url );
+
+  // Attempt to cache the file locally.
+    
+  $contents = uc_get_contents( $url, $username, $password );
+
+  if ( $contents ) 
+    uc_cache_contents( $url, $contents );
+
+  // If we reach this point, then an attempt has been made to
+  // cache the file locally. Either way, we can simply return
+  // the contents that we have already fetched.
+
+  return $contents;
+}
+
+
+
+/*
+ * xml_cache
+ *
+ *  $url - the remote URL to cache
+ *  $username, $password - optional authentication parameters
+ *  $timeout - how old the cache can be before being considered stale.
+ *
+ * This is a wrapper around content_cache that assumes the content of
+ * the remote URL to be XML. After fetching the content, it converts
+ * the XML into a tree structure and returns it.
+ */
+
+function xml_cache ( $url, $username = "", $password = "", $timeout = 3600 ) {
+
+  // Get the contents of the URL as usual.
+
+  $contents = content_cache( $url, $username, $password, $timeout );
+
+  // Parse the contents as XML.
+
+  $output = array();
+
+  $parser = xml_parser_create();
+
+  xml_parser_set_option($parser, XML_OPTION_CASE_FOLDING, 0);
+  xml_parser_set_option($parser, XML_OPTION_SKIP_WHITE, 1);
+  xml_parse_into_struct($parser, $contents, $values, $tags);
+  xml_parser_free($parser);
+
+  return $values;
+}
+
+
+
+/*
+ * uc_get_local_file
+ *
+ *  $url - the remote URL whose local cache file we want to locate.
+ *
+ * Returns the name of the local cache file associated with the given
+ * remote URL. The file name is created by hashing the URL so it should
+ * be unique.
+ */
+
+function uc_get_local_file ( $url ) {
+
+  // Work out where the local file should be placed.
+
+  $cache_dir = ABSPATH . "wp-content/cache/";
+
+  // Calculate a hash of the remote URL and extract the file extension. 
+
+  $hash = md5( $url );
+  $extension = "bin";
+
+  if ( preg_match( '/\.([A-Za-z]+)$/', $url, $matches ) )
+    $extension = $matches[1];
+
+  // Return the absolute path to the local file.
+
+  return $cache_dir . "uc.$hash.$extension";
+}
+
+
+
+/*
+ * uc_get_local_url
+ *
+ *  $url - the remote URL whose locally cached URL we want.
+ *
+ * Returns the locally cached URL associated with the given remote URL.
+ */
+
+function uc_get_local_url ( $url ) {
+
+  // Work out the base of the local URL.
+
+  $cache_url = get_option( 'siteurl' ) . "/wp-content/cache/";
+
+  // Calculate a hash of the remote URL and extract the file extension. 
+
+  $hash = md5( $url );
+  $extension = "bin";
+
+  if ( preg_match( '/\.([A-Za-z]+)$/', $url, $matches ) )
+    $extension = $matches[1];
+
+  // Return the local URL.
+
+  return $cache_url . "uc.$hash.$extension";
+}
+
+
+
+/*
+ * uc_is_cached
+ *
+ *  $url - the remote URL we are interested in.
+ *  $timeout - how old the cache can be before being considered stale.
+ *
+ * Returns true if the remote URL is locally cached and if the cache
+ * is still valid.
+ */
+
+function uc_is_cached ( $url, $timeout ) {
+
+  $local_file = uc_get_local_file( $url );
+  $expiry_time = @filemtime( $local_file ) + $timeout;
+
+  return @file_exists( $local_file ) && $expiry_time > time();
+}
+
+
+
+/*
+ * uc_cache_contents
+ *
+ *  $url - the remote URL to associate the cached contents with.
+ *  $contents - the contents we wish to cache.
+ *
+ * Associates the contents with the URL in the cache. This assumes
+ * that the given contents have already been fetched from the URL.
+ */
+
+function uc_cache_contents( $url, $contents ) {
+
+  if ( $local = fopen( uc_get_local_file( $url ), "wb" ) ) {
+
+    fwrite( $local, $contents );
+    fclose( $local );
+  }
+}
+
+
+
+/*
+ * uc_get_contents
+ *
+ *  $url - the URL to fetch.
+ *  $username, $password  - the authentication details to use.
+ *
+ *  Returns the contents of the given URL.
+ */
+
+function uc_get_contents ( $url, $username, $password ) {
   global $url_cache_ua;
  
   $handle = curl_init( $url );
@@ -141,6 +283,32 @@ function uc_get_url ( $url, $username, $password ) {
   curl_close( $handle );
 
   return $buffer;
+}
+
+
+
+/*
+ * uc_get_cached_contents
+ *
+ *  $url - the URL we are interested in.
+ *
+ * Returns the content of the locally cached version of the given
+ * URL.
+ */
+
+function uc_get_cached_contents ( $url ) {
+
+  if ( $cache = @fopen( uc_get_local_file( $url ), "r" ) ) {
+
+    $contents = "";
+
+    while ( $part = @fread( $cache, 8192 ) )
+      $contents .= $part;
+
+    @fclose( $cache ); 
+
+    return $contents;
+  }
 }
 
 
